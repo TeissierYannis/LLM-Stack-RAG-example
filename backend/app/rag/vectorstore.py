@@ -54,7 +54,7 @@ def get_qdrant_client() -> QdrantClient:
 
 
 async def ensure_collection(collection_name: str, vector_size: int = 1024):
-    """Create collection if it doesn't exist. Validates dimension consistency."""
+    """Create collection if it doesn't exist. Recreates on dimension mismatch."""
     client = get_qdrant_client()
     collections = client.get_collections().collections
     existing = [c.name for c in collections]
@@ -66,16 +66,21 @@ async def ensure_collection(collection_name: str, vector_size: int = 1024):
         )
         logger.info(f"Created Qdrant collection: {collection_name} (dim={vector_size})")
     else:
-        # Validate that existing collection dimension matches the embeddings
+        # Check if existing collection dimension matches
         info = client.get_collection(collection_name)
         existing_size = info.config.params.vectors.size
         if existing_size != vector_size:
-            raise ValueError(
-                f"Vector dimension mismatch for collection '{collection_name}': "
-                f"collection has dim={existing_size} but embeddings have dim={vector_size}. "
-                f"This usually means the embedding model changed. "
-                f"Delete the collection or use a consistent embedding model."
+            logger.warning(
+                f"Dimension mismatch for '{collection_name}': "
+                f"existing={existing_size}, new={vector_size}. "
+                f"Embedding model changed — recreating collection (old vectors are incompatible)."
             )
+            client.delete_collection(collection_name=collection_name)
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+            )
+            logger.info(f"Recreated collection: {collection_name} (dim={vector_size})")
 
 
 async def delete_collection(collection_name: str):
@@ -128,6 +133,17 @@ async def search_similar(
     k = top_k or settings.top_k_results
 
     try:
+        # Verify collection exists and dimensions match
+        info = client.get_collection(collection_name)
+        expected_size = info.config.params.vectors.size
+        if expected_size != len(query_embedding):
+            logger.warning(
+                f"Search skipped: query dim={len(query_embedding)} != "
+                f"collection dim={expected_size} for '{collection_name}'. "
+                f"Re-upload documents to fix."
+            )
+            return []
+
         results = client.query_points(
             collection_name=collection_name,
             query=query_embedding,
