@@ -14,6 +14,7 @@ import logging
 import httpx
 
 from app.core.config import settings
+from app.core.langfuse_client import create_span, end_span
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ async def rerank(
     query: str,
     documents: list[dict],
     top_n: int | None = None,
+    trace=None,
 ) -> list[dict]:
     """Rerank retrieved documents using a cross-encoder model.
 
@@ -31,6 +33,7 @@ async def rerank(
         query: The user's search query
         documents: List of retrieved chunk dicts (must have "text" key)
         top_n: Number of results to keep after reranking
+        trace: Langfuse trace/span for observability
 
     Returns:
         Reranked (and possibly pruned) list of documents
@@ -39,6 +42,11 @@ async def rerank(
         return documents
 
     top_n = top_n or len(documents)
+
+    span = create_span(
+        trace, name="rerank",
+        input={"query": query, "candidates": len(documents), "top_n": top_n, "model": settings.rerank_model},
+    )
 
     try:
         texts = [doc["text"] for doc in documents]
@@ -72,8 +80,13 @@ async def rerank(
             f"Reranked {len(documents)} → {len(reranked)} chunks "
             f"(scores: {[round(d['rerank_score'], 3) for d in reranked[:3]]})"
         )
+        end_span(span, output={
+            "reranked_count": len(reranked),
+            "top_scores": [round(d["rerank_score"], 3) for d in reranked[:3]],
+        })
         return reranked
 
     except Exception as e:
         logger.warning(f"Reranking failed ({e}), using original ranking")
+        end_span(span, status_message=str(e), level="WARNING")
         return documents

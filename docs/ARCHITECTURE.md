@@ -21,7 +21,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    BACKEND (FastAPI)                                 │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Auth (JWT + API Key)  │  OpenTelemetry Tracing              │  │
+│  │  Auth (JWT + API Key)  │  OpenTelemetry  │  Langfuse Traces  │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 │  ┌──────────┐  ┌───────────┐  ┌──────────────┐  ┌────────────┐   │
@@ -76,6 +76,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     OBSERVABILITY                                    │
 │  OpenTelemetry → Jaeger / Grafana Tempo / Datadog / New Relic       │
+│  Langfuse     → LLM traces, generations, spans, scores, costs      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -161,7 +162,8 @@ Question utilisateur
 | Background | Celery + Redis | Ingestion async |
 | Auth | JWT + API Keys | Authentification |
 | Reranking | Cross-encoder via LiteLLM | Précision RAG |
-| Observabilité | OpenTelemetry | Tracing distribué |
+| Observabilité infra | OpenTelemetry | Tracing distribué (latence, erreurs) |
+| Observabilité LLM | Langfuse | Traces LLM, coûts, qualité, debug |
 | Containers | Docker Compose | Orchestration locale |
 | Cloud | Terraform + K8s | Déploiement cloud |
 
@@ -187,3 +189,72 @@ Formats supportés : PDF (hybride texte+scan), PNG, JPG, JPEG, WebP, BMP, TIFF (
 | AWS Bedrock | `bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0` | `bedrock/amazon.titan-embed-text-v2:0` |
 | Azure AI Foundry | `azure/gpt-4o` | `azure/text-embedding-3-small` |
 | Google Vertex | `vertex_ai/gemini-2.0-flash` | `vertex_ai/text-embedding-005` |
+
+## Langfuse - Observabilité LLM
+
+Langfuse trace chaque requête de bout en bout pour offrir une visibilité complète
+sur les appels LLM, les coûts, la latence et la qualité des réponses.
+
+### Configuration
+
+```env
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com    # ou self-hosted: http://langfuse:3000
+```
+
+### Traces instrumentées
+
+```
+Chat Request (trace: "chat-stream" ou "chat")
+│
+├── rag-retrieval (span)
+│   ├── embedding (generation) — query embedding via LiteLLM
+│   └── rerank (span) — cross-encoder reranking (si activé)
+│
+└── llm-stream-completion / llm-completion (generation)
+    └── model, input messages, output, usage (tokens), latence
+
+Document Ingestion (trace: "document-ingestion")
+│
+├── upload-storage (span) — S3 / GCS / Azure Blob / local
+├── parse-document (span) — extraction texte + OCR
+├── chunk-text (span) — découpage en chunks
+├── embed-chunks (span)
+│   └── embedding (generation) × N batches
+└── store-vectors (span) — stockage Qdrant
+```
+
+### Ce que Langfuse capture
+
+| Élément | Données |
+|---------|---------|
+| **Traces** | Chaque requête chat et ingestion de document |
+| **Generations** | Chaque appel LLM (completion + embedding) avec model, input, output, tokens |
+| **Spans** | Étapes intermédiaires (retrieval, reranking, parsing, chunking, storage) |
+| **Metadata** | Assistant, collection, modèle, provider, taille fichier |
+| **Sessions** | Groupement par conversation_id |
+| **Coûts** | Calcul automatique via les tokens (input/output) |
+
+### Langfuse Cloud vs Self-hosted
+
+| Déploiement | Configuration |
+|-------------|---------------|
+| **Langfuse Cloud** | `LANGFUSE_HOST=https://cloud.langfuse.com` (défaut) |
+| **Self-hosted** | `LANGFUSE_HOST=http://langfuse:3000` + ajouter service Docker |
+
+Pour le self-hosted, ajouter dans `docker-compose.yml` :
+```yaml
+langfuse:
+  image: langfuse/langfuse:2
+  ports:
+    - "3001:3000"
+  environment:
+    - DATABASE_URL=postgresql://raguser:ragpassword@postgres:5432/langfuse
+    - NEXTAUTH_URL=http://localhost:3001
+    - NEXTAUTH_SECRET=change-me
+    - SALT=change-me
+  depends_on:
+    - postgres
+```

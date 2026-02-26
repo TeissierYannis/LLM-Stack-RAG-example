@@ -56,6 +56,9 @@ opentelemetry-instrumentation-fastapi==0.50b0
 opentelemetry-instrumentation-httpx==0.50b0
 opentelemetry-instrumentation-sqlalchemy==0.50b0
 
+# LLM Observability - Langfuse
+langfuse==2.56.3
+
 # Utils
 python-dotenv==1.0.1
 httpx==0.28.1

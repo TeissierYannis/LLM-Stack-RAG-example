@@ -1,5 +1,6 @@
 """RAG retriever: embedding search → reranking → context building."""
 
+from app.core.langfuse_client import create_span, end_span
 from app.rag.embeddings import get_single_embedding
 from app.rag.reranker import rerank
 from app.rag.vectorstore import search_similar
@@ -24,6 +25,7 @@ async def retrieve_context(
     collection_name: str,
     query: str,
     top_k: int | None = None,
+    trace=None,
 ) -> tuple[str, list[dict]]:
     """Retrieve relevant context: vector search → rerank → format.
 
@@ -39,14 +41,20 @@ async def retrieve_context(
     # Retrieve more candidates for reranking to improve recall
     search_k = k * 2
 
-    query_embedding = await get_single_embedding(query)
+    span = create_span(
+        trace, name="rag-retrieval",
+        input={"query": query, "collection": collection_name, "top_k": k, "search_k": search_k},
+    )
+
+    query_embedding = await get_single_embedding(query, trace=span)
     results = await search_similar(collection_name, query_embedding, top_k=search_k)
 
     if not results:
+        end_span(span, output={"chunks_found": 0})
         return "", []
 
     # Rerank (no-op if rerank_model is not configured)
-    results = await rerank(query, results, top_n=k)
+    results = await rerank(query, results, top_n=k, trace=span)
 
     # Trim to final top_k
     results = results[:k]
@@ -56,6 +64,12 @@ async def retrieve_context(
         context_parts.append(f"[Source: {r['filename']}]\n{r['text']}")
 
     context = "\n\n".join(context_parts)
+
+    end_span(span, output={
+        "chunks_found": len(results),
+        "sources": [r["filename"] for r in results],
+        "context_length": len(context),
+    })
     return context, results
 
 

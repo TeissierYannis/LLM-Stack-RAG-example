@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import assistants, auth, chat, conversations, documents, models
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.langfuse_client import flush as langfuse_flush
+from app.core.langfuse_client import get_langfuse
 from app.core.telemetry import setup_telemetry
 
 logging.basicConfig(level=settings.log_level)
@@ -41,7 +43,17 @@ async def startup():
     logger.info("Starting Enterprise Chat RAG API v2.0")
     await init_db()
     setup_telemetry(app)
-    logger.info(f"Database initialized | Auth: {settings.auth_enabled} | Celery: {settings.use_celery} | Storage: {settings.storage_provider}")
+    get_langfuse()  # Initialize Langfuse client eagerly
+    logger.info(
+        f"Database initialized | Auth: {settings.auth_enabled} | Celery: {settings.use_celery} "
+        f"| Storage: {settings.storage_provider} | Langfuse: {settings.langfuse_enabled}"
+    )
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    langfuse_flush()
+    logger.info("Langfuse flushed, shutting down")
 
 
 @app.get("/health")
@@ -53,4 +65,5 @@ async def health():
         "auth_enabled": settings.auth_enabled,
         "storage": settings.storage_provider,
         "ocr": settings.ocr_provider,
+        "langfuse": settings.langfuse_enabled,
     }

@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     otel_exporter_endpoint: str = ""               # e.g. http://jaeger:4317
     otel_service_name: str = "enterprise-chat-rag"
 
+    # Langfuse (LLM observability)
+    langfuse_enabled: bool = False
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "https://cloud.langfuse.com"  # Self-hosted: http://langfuse:3000
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

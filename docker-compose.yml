@@ -62,6 +62,11 @@ services:
       - RERANK_MODEL=${RERANK_MODEL:-}
       # OpenTelemetry
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-}
+      # Langfuse (LLM observability)
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
 
   # ---- Celery Worker (background document processing) ----
   worker:

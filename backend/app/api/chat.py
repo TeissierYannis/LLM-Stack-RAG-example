@@ -12,6 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.schemas import ChatRequest, ChatResponse, SourceReference
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.langfuse_client import create_trace, end_span, create_span, flush
 from app.models.assistant import Assistant
 from app.models.conversation import Conversation, Message
 from app.rag.retriever import build_rag_messages, retrieve_context
@@ -39,6 +40,18 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     # Resolve assistant (optional - chat works without one too)
     assistant = await _resolve_assistant(db, request)
     model = request.model or (assistant.model if assistant else "default-completion")
+
+    # Create Langfuse trace for the entire chat request
+    trace = create_trace(
+        name="chat-stream",
+        session_id=str(request.conversation_id) if request.conversation_id else None,
+        metadata={
+            "model": model,
+            "assistant": assistant.name if assistant else None,
+            "use_rag": request.use_rag,
+        },
+        tags=["chat", "stream"],
+    )
 
     # Get or create conversation
     if request.conversation_id:
@@ -76,6 +89,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             assistant.qdrant_collection,
             request.message,
             top_k=assistant.top_k,
+            trace=trace,
         )
 
     # Build conversation history
@@ -111,7 +125,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             yield {"event": "sources", "data": json.dumps(source_refs)}
             yield {"event": "meta", "data": json.dumps({"conversation_id": str(conversation.id)})}
 
-            async for chunk in stream_completion(messages, model=model):
+            async for chunk in stream_completion(messages, model=model, trace=trace):
                 full_response.append(chunk)
                 yield {"event": "message", "data": chunk}
 
@@ -133,6 +147,8 @@ async def chat_stream(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         except Exception as e:
             logger.exception("Error during chat streaming")
             yield {"event": "error", "data": str(e)}
+        finally:
+            flush()
 
     return EventSourceResponse(event_generator())
 
@@ -144,6 +160,18 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     assistant = await _resolve_assistant(db, request)
     model = request.model or (assistant.model if assistant else "default-completion")
+
+    # Create Langfuse trace for the entire chat request
+    trace = create_trace(
+        name="chat",
+        session_id=str(request.conversation_id) if request.conversation_id else None,
+        metadata={
+            "model": model,
+            "assistant": assistant.name if assistant else None,
+            "use_rag": request.use_rag,
+        },
+        tags=["chat"],
+    )
 
     # Get or create conversation
     if request.conversation_id:
@@ -173,11 +201,12 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             assistant.qdrant_collection,
             request.message,
             top_k=assistant.top_k,
+            trace=trace,
         )
 
     system_prompt = assistant.system_prompt if assistant else None
     messages = build_rag_messages(request.message, context, system_prompt)
-    response_text = await get_completion(messages, model=model)
+    response_text = await get_completion(messages, model=model, trace=trace)
 
     source_refs = [
         SourceReference(
@@ -197,6 +226,8 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(assistant_msg)
     await db.commit()
+
+    flush()
 
     return ChatResponse(
         conversation_id=conversation.id,
