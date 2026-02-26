@@ -278,7 +278,7 @@ export default function AssistantPanel({ activeAssistant, onSelect }: Props) {
                   {uploading ? "Upload..." : "Ajouter un document"}
                   <input
                     type="file"
-                    accept=".pdf,.docx,.md,.txt"
+                    accept=".pdf,.docx,.md,.txt,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.tif"
                     onChange={(e) => handleUpload(a.id, e)}
                     className="hidden"
                     disabled={uploading}

@@ -14,7 +14,7 @@ from app.services.document import ingest_document, remove_document
 
 router = APIRouter(prefix="/assistants/{assistant_id}/documents", tags=["documents"])
 
-ALLOWED_TYPES = {"pdf", "docx", "md", "txt"}
+ALLOWED_TYPES = {"pdf", "docx", "md", "txt", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
