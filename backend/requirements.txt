@@ -19,10 +19,14 @@ pytesseract==0.3.13
 Pillow==11.1.0
 pdf2image==1.17.0
 
-# OCR - Cloud providers (optional, install as needed)
-boto3==1.35.86                          # AWS Textract
+# OCR - Cloud providers
+boto3==1.35.86                          # AWS Textract + S3
 azure-ai-documentintelligence==1.0.0    # Azure Document Intelligence
 google-cloud-documentai==2.32.0         # Google Document AI
+
+# Cloud storage
+google-cloud-storage==2.19.0           # GCS
+azure-storage-blob==12.24.0            # Azure Blob
 
 # Vector store
 qdrant-client==1.12.1
@@ -32,11 +36,25 @@ sqlalchemy==2.0.36
 asyncpg==0.30.0
 alembic==1.14.0
 
-# Cache
+# Cache + Message broker
 redis==5.2.1
+
+# Background tasks
+celery==5.4.0
+
+# Authentication
+PyJWT==2.10.1
 
 # SSE streaming
 sse-starlette==2.2.1
+
+# Observability (optional)
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
 
 # Utils
 python-dotenv==1.0.1

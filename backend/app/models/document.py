@@ -14,8 +14,9 @@ class Document(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     assistant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assistants.id", ondelete="CASCADE"))
     filename: Mapped[str]
-    file_type: Mapped[str]  # pdf, docx, md, txt
+    file_type: Mapped[str]  # pdf, docx, md, txt, png, jpg, etc.
     file_size: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str | None] = mapped_column(Text, nullable=True)  # Object storage path
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     content_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(default="processing")  # processing, ready, error

@@ -1,4 +1,8 @@
-"""Qdrant vector store for document chunks. Each assistant has its own collection."""
+"""Qdrant vector store for document chunks.
+
+Supports both self-hosted Qdrant and Qdrant Cloud (managed).
+Each assistant has its own collection.
+"""
 
 import uuid
 import logging
@@ -14,9 +18,23 @@ _client: QdrantClient | None = None
 
 
 def get_qdrant_client() -> QdrantClient:
+    """Get or create Qdrant client (self-hosted or Qdrant Cloud)."""
     global _client
     if _client is None:
-        _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        if settings.qdrant_url:
+            _client = QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key or None,
+                timeout=30,
+            )
+            logger.info(f"Connected to Qdrant Cloud: {settings.qdrant_url}")
+        else:
+            _client = QdrantClient(
+                host=settings.qdrant_host,
+                port=settings.qdrant_port,
+                timeout=30,
+            )
+            logger.info(f"Connected to Qdrant: {settings.qdrant_host}:{settings.qdrant_port}")
     return _client
 
 

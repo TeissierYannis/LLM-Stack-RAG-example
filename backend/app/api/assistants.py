@@ -172,13 +172,21 @@ async def update_assistant(
 
 @router.delete("/{assistant_id}")
 async def delete_assistant(assistant_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    """Delete an assistant, its documents, and its Qdrant collection."""
+    """Delete an assistant, its documents, its Qdrant collection, and stored files."""
+    from app.core.storage import delete_prefix
+
     assistant = await db.get(Assistant, assistant_id)
     if not assistant:
         raise HTTPException(status_code=404, detail="Assistant not found")
 
     # Delete the entire Qdrant collection
     await delete_collection(assistant.qdrant_collection)
+
+    # Delete all stored files for this assistant
+    try:
+        await delete_prefix(str(assistant_id))
+    except Exception:
+        pass  # Best effort cleanup
 
     # Cascade will delete documents; conversations keep assistant_id=NULL
     await db.delete(assistant)

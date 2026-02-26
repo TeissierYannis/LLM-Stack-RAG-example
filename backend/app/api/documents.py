@@ -25,6 +25,7 @@ def _doc_out(d: Document) -> DocumentOut:
         filename=d.filename,
         file_type=d.file_type,
         file_size=d.file_size,
+        storage_key=d.storage_key,
         chunk_count=d.chunk_count,
         content_preview=d.content_preview,
         status=d.status,

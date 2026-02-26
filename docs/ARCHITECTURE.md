@@ -1,13 +1,13 @@
-# Architecture - Enterprise Chat + RAG with LiteLLM
+# Architecture - Enterprise Chat + RAG with LiteLLM (v2.0)
 
 ## Vue d'ensemble
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        UTILISATEURS                                 │
-│                    (Navigateur / API)                                │
+│                (Navigateur / API / SDK)                              │
 └──────────────────────────┬──────────────────────────────────────────┘
-                           │ HTTPS
+                           │ HTTPS + JWT / API Key
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      FRONTEND (React)                               │
@@ -16,62 +16,66 @@
 │  │   UI      │  │  Documents   │  │  Conversations│                 │
 │  └──────────┘  └──────────────┘  └───────────────┘                 │
 └──────────────────────────┬──────────────────────────────────────────┘
-                           │ REST / WebSocket
+                           │ REST + SSE
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    BACKEND (FastAPI)                                 │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Auth (JWT + API Key)  │  OpenTelemetry Tracing              │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌──────────┐  ┌───────────┐  ┌──────────────┐  ┌────────────┐   │
+│  │ /chat    │  │ /documents│  │ /assistants  │  │ /auth      │   │
+│  │ stream   │  │ upload    │  │ CRUD         │  │ token      │   │
+│  └────┬─────┘  └─────┬─────┘  └──────────────┘  └────────────┘   │
+│       │              │                                              │
+│       │         ┌────▼──────┐                                      │
+│       │         │ Celery    │  (async document processing)         │
+│       │         │ Worker    │                                      │
+│       │         └────┬──────┘                                      │
+│       │              │                                              │
+│  ┌────▼──────────────▼──────────────────────────────────────────┐  │
+│  │                    RAG ENGINE                                 │  │
+│  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌────────┐ ┌─────────┐ │  │
+│  │  │ Parser │ │Chunker │ │Embeddings│ │Reranker│ │ Context │ │  │
+│  │  │+ OCR   │ │        │ │(LiteLLM) │ │(cross- │ │ Builder │ │  │
+│  │  │        │ │        │ │          │ │encoder)│ │         │ │  │
+│  │  └───┬────┘ └────────┘ └──────────┘ └────────┘ └─────────┘ │  │
+│  │      ▼                                                       │  │
+│  │  ┌──────────────────────────────────────────────────────┐   │  │
+│  │  │ OCR: Tesseract │ AWS Textract │ Azure DI │ GCP DAI   │   │  │
+│  │  └──────────────────────────────────────────────────────┘   │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└─────────┬─────────────────────────────────────┬────────────────────┘
+          │                                     │
+          ▼                                     ▼
+┌──────────────────────┐          ┌──────────────────────────────────┐
+│   LiteLLM PROXY      │          │  OBJECT STORAGE                  │
+│  ┌────────────────┐  │          │  ┌──────┐ ┌─────┐ ┌───────────┐ │
+│  │ Load balancing │  │          │  │  S3  │ │ GCS │ │Azure Blob │ │
+│  │ + Fallback     │  │          │  └──────┘ └─────┘ └───────────┘ │
+│  └────────────────┘  │          └──────────────────────────────────┘
+│   │       │       │  │
+│   ▼       ▼       ▼  │
+│ Bedrock Foundry Vertex│
+│ Claude  GPT-4o  Gemini│
+│ +Embed  +Embed  +Embed│
+│ +Rerank              │
+└──────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                     DATA LAYER (managed or self-hosted)             │
 │                                                                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐      │
-│  │  /chat       │  │  /documents  │  │  /conversations      │      │
-│  │  endpoint    │  │  upload +    │  │  CRUD                │      │
-│  │  (streaming) │  │  processing  │  │                      │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────────────┘      │
-│         │                 │                                         │
-│  ┌──────▼─────────────────▼────────────────────────────────────┐   │
-│  │              RAG ENGINE                                      │   │
-│  │  ┌────────────┐ ┌────────────┐ ┌─────────────────────┐     │   │
-│  │  │ Document   │ │ Chunking   │ │ Context             │     │   │
-│  │  │ Parser     │ │ Strategy   │ │ Builder             │     │   │
-│  │  │(PDF,DOCX,  │ │(recursive, │ │(query+relevant      │     │   │
-│  │  │ MD,TXT,    │ │ semantic)  │ │ chunks → prompt)    │     │   │
-│  │  │ IMG+OCR)   │ │            │ │                     │     │   │
-│  │  └─────┬──────┘ └────────────┘ └─────────────────────┘     │   │
-│  │        │                                                    │   │
-│  │        ▼  OCR (configurable)                                │   │
-│  │  ┌──────────────────────────────────────────────────────┐  │   │
-│  │  │ local: Tesseract │ AWS Textract │ Azure DI │ GCP DAI │  │   │
-│  │  └──────────────────────────────────────────────────────┘  │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│         │                                                           │
-│         │  Embedding / Completion requests                          │
-└─────────┼───────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                   LiteLLM PROXY                                     │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Routage intelligent  │  Load balancing  │  Fallback        │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│         │                      │                    │               │
-│         ▼                      ▼                    ▼               │
-│  ┌─────────────┐    ┌──────────────┐    ┌──────────────────┐      │
-│  │  AWS         │    │  Azure AI    │    │  Google          │      │
-│  │  Bedrock     │    │  Foundry     │    │  Vertex AI       │      │
-│  │             │    │              │    │                  │      │
-│  │ Claude      │    │ GPT-4o       │    │ Gemini           │      │
-│  │ Titan Embed │    │ Ada Embed    │    │ Gecko Embed      │      │
-│  └─────────────┘    └──────────────┘    └──────────────────┘      │
+│  │ Qdrant       │  │ PostgreSQL   │  │ Redis                │      │
+│  │ (self-hosted │  │ (RDS /       │  │ (ElastiCache /       │      │
+│  │  or Cloud)   │  │  Cloud SQL)  │  │  Memorystore)        │      │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘      │
 └─────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     DATA LAYER                                      │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐      │
-│  │  Qdrant      │  │  PostgreSQL  │  │  Redis               │      │
-│  │  (Vectors)   │  │  (Metadata + │  │  (Cache +            │      │
-│  │              │  │  Historique) │  │   Sessions)          │      │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘      │
+│                     OBSERVABILITY                                    │
+│  OpenTelemetry → Jaeger / Grafana Tempo / Datadog / New Relic       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,6 +85,8 @@
 ```
 Document (PDF/DOCX/MD/TXT/PNG/JPG/TIFF...)
     │
+    ├──→ Object Storage (S3 / GCS / Azure Blob)   ← raw file backup
+    │
     ▼
 ┌──────────────┐     ┌──────────────────────────────────┐
 │  Parser       │────→│  OCR (si image/scan)              │
@@ -89,8 +95,6 @@ Document (PDF/DOCX/MD/TXT/PNG/JPG/TIFF...)
 └──────┬───────┘     └──────────────────────────────────┘
        │
        ▼ Texte brut
-└──────┬───────┘
-       ▼
 ┌──────────────┐
 │  Chunker      │──→ Chunks (500-1000 tokens, overlap 100)
 └──────┬───────┘
@@ -102,7 +106,11 @@ Document (PDF/DOCX/MD/TXT/PNG/JPG/TIFF...)
        ▼
 ┌──────────────┐
 │  Qdrant      │──→ Vecteurs stockés avec metadata
+│  (or Cloud)  │
 └──────────────┘
+
+Note: si USE_CELERY=true, les étapes 2-5 sont exécutées
+en arrière-plan par un worker Celery.
 ```
 
 ### 2. Chat avec RAG
@@ -113,9 +121,15 @@ Question utilisateur
 ┌──────────────┐       ┌──────────────┐
 │  Embedding   │──────→│  Qdrant      │
 │  de la query │       │  Similarity  │
-└──────────────┘       │  Search      │
+└──────────────┘       │  Search (2×k)│
                        └──────┬───────┘
-                              │ Top-K chunks
+                              │ Candidats
+                              ▼
+                       ┌──────────────┐
+                       │  Reranker    │  (cross-encoder, optional)
+                       │  Top-K final │
+                       └──────┬───────┘
+                              │ Chunks reranked
                               ▼
                        ┌──────────────┐
                        │  Context     │
@@ -137,12 +151,17 @@ Question utilisateur
 
 | Composant | Technologie | Rôle |
 |-----------|------------|------|
-| Frontend | React + TypeScript | Interface chat |
-| Backend | FastAPI (Python) | API REST + WebSocket |
+| Frontend | React + TypeScript + Tailwind | Interface chat |
+| Backend | FastAPI (Python) | API REST + SSE |
 | LLM Proxy | LiteLLM | Routage multi-provider |
-| Vector DB | Qdrant | Stockage embeddings |
-| Database | PostgreSQL | Métadonnées + historique |
-| Cache | Redis | Sessions + cache |
+| Vector DB | Qdrant (self-hosted ou Cloud) | Stockage embeddings |
+| Database | PostgreSQL (ou RDS/Cloud SQL) | Métadonnées + historique |
+| Cache | Redis (ou ElastiCache) | Cache + broker Celery |
+| Object Storage | S3 / GCS / Azure Blob | Fichiers bruts |
+| Background | Celery + Redis | Ingestion async |
+| Auth | JWT + API Keys | Authentification |
+| Reranking | Cross-encoder via LiteLLM | Précision RAG |
+| Observabilité | OpenTelemetry | Tracing distribué |
 | Containers | Docker Compose | Orchestration locale |
 | Cloud | Terraform + K8s | Déploiement cloud |
 

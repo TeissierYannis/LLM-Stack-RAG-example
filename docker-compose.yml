@@ -12,12 +12,13 @@ services:
       - VITE_API_URL=http://localhost:8000
 
   # ---- Backend API ----
-  backend:
+  backend: &backend-common
     build: ./backend
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - rag_storage:/tmp/rag-storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,14 +30,17 @@ services:
         condition: service_started
     env_file:
       - .env
-    environment:
+    environment: &backend-env
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-raguser}:${POSTGRES_PASSWORD:-ragpassword}@postgres:5432/${POSTGRES_DB:-enterprise_rag}
       - LITELLM_PROXY_URL=http://litellm:4000
       - QDRANT_HOST=qdrant
       - REDIS_URL=redis://redis:6379/0
+      # Qdrant Cloud (leave empty for self-hosted)
+      - QDRANT_URL=${QDRANT_URL:-}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
       # OCR provider: local | aws_textract | azure_di | google_docai | auto
       - OCR_PROVIDER=${OCR_PROVIDER:-local}
-      # AWS (also used by LiteLLM for Bedrock)
+      # AWS (LiteLLM + Textract + S3)
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
       - AWS_REGION=${AWS_REGION:-us-east-1}
@@ -45,6 +49,27 @@ services:
       - AZURE_DI_KEY=${AZURE_DI_KEY:-}
       # Google Document AI
       - GOOGLE_DOCAI_PROCESSOR=${GOOGLE_DOCAI_PROCESSOR:-}
+      # Object storage: local | s3 | gcs | azure_blob
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - STORAGE_BUCKET=${STORAGE_BUCKET:-}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:-}
+      # Background processing
+      - USE_CELERY=${USE_CELERY:-false}
+      # Auth
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - API_KEYS=${API_KEYS:-}
+      # Reranking
+      - RERANK_MODEL=${RERANK_MODEL:-}
+      # OpenTelemetry
+      - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-}
+
+  # ---- Celery Worker (background document processing) ----
+  worker:
+    <<: *backend-common
+    ports: []
+    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=2"]
+    profiles:
+      - celery
 
   # ---- LiteLLM Proxy ----
   litellm:
@@ -98,3 +123,4 @@ volumes:
   qdrant_data:
   pgdata:
   redis_data:
+  rag_storage:

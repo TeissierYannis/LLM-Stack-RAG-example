@@ -105,6 +105,7 @@ class DocumentOut(BaseModel):
     filename: str
     file_type: str
     file_size: int
+    storage_key: str | None = None
     chunk_count: int
     content_preview: str | None
     status: str

@@ -1,6 +1,7 @@
-"""RAG retriever: combines embedding search with context building."""
+"""RAG retriever: embedding search → reranking → context building."""
 
 from app.rag.embeddings import get_single_embedding
+from app.rag.reranker import rerank
 from app.rag.vectorstore import search_similar
 
 DEFAULT_SYSTEM_PROMPT = """Tu es un assistant d'entreprise intelligent. Tu réponds aux questions en te basant sur les documents fournis dans le contexte.
@@ -24,16 +25,31 @@ async def retrieve_context(
     query: str,
     top_k: int | None = None,
 ) -> tuple[str, list[dict]]:
-    """Retrieve relevant context for a query from a specific assistant's collection.
+    """Retrieve relevant context: vector search → rerank → format.
+
+    Pipeline:
+    1. Embed query → vector similarity search (retrieves 2x top_k candidates)
+    2. Rerank candidates with cross-encoder (if configured)
+    3. Take top_k results and format as context string
 
     Returns:
         Tuple of (formatted context string, list of source documents)
     """
+    k = top_k or 5
+    # Retrieve more candidates for reranking to improve recall
+    search_k = k * 2
+
     query_embedding = await get_single_embedding(query)
-    results = await search_similar(collection_name, query_embedding, top_k=top_k)
+    results = await search_similar(collection_name, query_embedding, top_k=search_k)
 
     if not results:
         return "", []
+
+    # Rerank (no-op if rerank_model is not configured)
+    results = await rerank(query, results, top_n=k)
+
+    # Trim to final top_k
+    results = results[:k]
 
     context_parts = []
     for r in results:
