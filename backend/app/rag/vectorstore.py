@@ -4,6 +4,7 @@ Supports both self-hosted Qdrant and Qdrant Cloud (managed).
 Each assistant has its own collection.
 """
 
+import time
 import uuid
 import logging
 
@@ -18,23 +19,37 @@ _client: QdrantClient | None = None
 
 
 def get_qdrant_client() -> QdrantClient:
-    """Get or create Qdrant client (self-hosted or Qdrant Cloud)."""
+    """Get or create Qdrant client (self-hosted or Qdrant Cloud) with retry."""
     global _client
     if _client is None:
-        if settings.qdrant_url:
-            _client = QdrantClient(
-                url=settings.qdrant_url,
-                api_key=settings.qdrant_api_key or None,
-                timeout=30,
-            )
-            logger.info(f"Connected to Qdrant Cloud: {settings.qdrant_url}")
-        else:
-            _client = QdrantClient(
-                host=settings.qdrant_host,
-                port=settings.qdrant_port,
-                timeout=30,
-            )
-            logger.info(f"Connected to Qdrant: {settings.qdrant_host}:{settings.qdrant_port}")
+        for attempt in range(5):
+            try:
+                if settings.qdrant_url:
+                    _client = QdrantClient(
+                        url=settings.qdrant_url,
+                        api_key=settings.qdrant_api_key or None,
+                        timeout=30,
+                    )
+                    logger.info(f"Connected to Qdrant Cloud: {settings.qdrant_url}")
+                else:
+                    _client = QdrantClient(
+                        host=settings.qdrant_host,
+                        port=settings.qdrant_port,
+                        timeout=30,
+                    )
+                    logger.info(f"Connected to Qdrant: {settings.qdrant_host}:{settings.qdrant_port}")
+                # Verify connectivity
+                _client.get_collections()
+                break
+            except Exception as e:
+                _client = None
+                if attempt < 4:
+                    wait = 2 ** attempt
+                    logger.warning(f"Qdrant not ready (attempt {attempt + 1}/5): {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    logger.error(f"Failed to connect to Qdrant after 5 attempts: {e}")
+                    raise
     return _client
 
 
