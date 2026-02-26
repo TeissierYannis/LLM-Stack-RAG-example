@@ -54,7 +54,7 @@ def get_qdrant_client() -> QdrantClient:
 
 
 async def ensure_collection(collection_name: str, vector_size: int = 1024):
-    """Create collection if it doesn't exist."""
+    """Create collection if it doesn't exist. Validates dimension consistency."""
     client = get_qdrant_client()
     collections = client.get_collections().collections
     existing = [c.name for c in collections]
@@ -64,7 +64,18 @@ async def ensure_collection(collection_name: str, vector_size: int = 1024):
             collection_name=collection_name,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        logger.info(f"Created Qdrant collection: {collection_name}")
+        logger.info(f"Created Qdrant collection: {collection_name} (dim={vector_size})")
+    else:
+        # Validate that existing collection dimension matches the embeddings
+        info = client.get_collection(collection_name)
+        existing_size = info.config.params.vectors.size
+        if existing_size != vector_size:
+            raise ValueError(
+                f"Vector dimension mismatch for collection '{collection_name}': "
+                f"collection has dim={existing_size} but embeddings have dim={vector_size}. "
+                f"This usually means the embedding model changed. "
+                f"Delete the collection or use a consistent embedding model."
+            )
 
 
 async def delete_collection(collection_name: str):

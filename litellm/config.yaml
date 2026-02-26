@@ -83,24 +83,19 @@ model_list:
       aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
       aws_region_name: os.environ/AWS_REGION_NAME
 
-  # ---- Fallback / Load-balanced embedding ----
+  # ---- Default embedding ----
+  # IMPORTANT: Do NOT load-balance embeddings across models with different
+  # output dimensions — Qdrant collections are created with a fixed vector size.
+  #   - Titan Embed v2: 1024 dim
+  #   - text-embedding-3-small: 1536 dim
+  #   - text-embedding-005: 768 dim
+  # Pick ONE model as default. The others are available by explicit name above.
   - model_name: default-embedding
     litellm_params:
       model: bedrock/amazon.titan-embed-text-v2:0
       aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
       aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
       aws_region_name: os.environ/AWS_REGION_NAME
-  - model_name: default-embedding
-    litellm_params:
-      model: azure/text-embedding-3-small
-      api_key: os.environ/AZURE_API_KEY
-      api_base: os.environ/AZURE_API_BASE
-      api_version: os.environ/AZURE_API_VERSION
-  - model_name: default-embedding
-    litellm_params:
-      model: vertex_ai/text-embedding-005
-      vertex_project: os.environ/VERTEX_PROJECT
-      vertex_location: os.environ/VERTEX_LOCATION
 
 litellm_settings:
   # Fallback: si le premier modèle échoue, essayer le suivant
