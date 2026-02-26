@@ -1,151 +1,236 @@
-# Architecture - Enterprise Chat + RAG with LiteLLM (v2.0)
+# Architecture - Enterprise Chat + RAG avec LiteLLM (v2.0)
 
-## Vue d'ensemble
+## 1. Vue d'ensemble
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        UTILISATEURS                                 │
-│                (Navigateur / API / SDK)                              │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │ HTTPS + JWT / API Key
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      FRONTEND (React)                               │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐                 │
-│  │   Chat    │  │  Upload      │  │  Historique   │                 │
-│  │   UI      │  │  Documents   │  │  Conversations│                 │
-│  └──────────┘  └──────────────┘  └───────────────┘                 │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │ REST + SSE
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    BACKEND (FastAPI)                                 │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │  Auth (JWT + API Key)  │  OpenTelemetry  │  Langfuse Traces  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                     │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────┐  ┌────────────┐   │
-│  │ /chat    │  │ /documents│  │ /assistants  │  │ /auth      │   │
-│  │ stream   │  │ upload    │  │ CRUD         │  │ token      │   │
-│  └────┬─────┘  └─────┬─────┘  └──────────────┘  └────────────┘   │
-│       │              │                                              │
-│       │         ┌────▼──────┐                                      │
-│       │         │ Celery    │  (async document processing)         │
-│       │         │ Worker    │                                      │
-│       │         └────┬──────┘                                      │
-│       │              │                                              │
-│  ┌────▼──────────────▼──────────────────────────────────────────┐  │
-│  │                    RAG ENGINE                                 │  │
-│  │  ┌────────┐ ┌────────┐ ┌──────────┐ ┌────────┐ ┌─────────┐ │  │
-│  │  │ Parser │ │Chunker │ │Embeddings│ │Reranker│ │ Context │ │  │
-│  │  │+ OCR   │ │        │ │(LiteLLM) │ │(cross- │ │ Builder │ │  │
-│  │  │        │ │        │ │          │ │encoder)│ │         │ │  │
-│  │  └───┬────┘ └────────┘ └──────────┘ └────────┘ └─────────┘ │  │
-│  │      ▼                                                       │  │
-│  │  ┌──────────────────────────────────────────────────────┐   │  │
-│  │  │ OCR: Tesseract │ AWS Textract │ Azure DI │ GCP DAI   │   │  │
-│  │  └──────────────────────────────────────────────────────┘   │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────┬─────────────────────────────────────┬────────────────────┘
-          │                                     │
-          ▼                                     ▼
-┌──────────────────────┐          ┌──────────────────────────────────┐
-│   LiteLLM PROXY      │          │  OBJECT STORAGE                  │
-│  ┌────────────────┐  │          │  ┌──────┐ ┌─────┐ ┌───────────┐ │
-│  │ Load balancing │  │          │  │  S3  │ │ GCS │ │Azure Blob │ │
-│  │ + Fallback     │  │          │  └──────┘ └─────┘ └───────────┘ │
-│  └────────────────┘  │          └──────────────────────────────────┘
-│   │       │       │  │
-│   ▼       ▼       ▼  │
-│ Bedrock Foundry Vertex│
-│ Claude  GPT-4o  Gemini│
-│ +Embed  +Embed  +Embed│
-│ +Rerank              │
-└──────────────────────┘
+```mermaid
+graph TB
+    subgraph Users["🧑‍💻 Utilisateurs"]
+        Browser["Navigateur / API / SDK"]
+    end
 
-┌─────────────────────────────────────────────────────────────────────┐
-│                     DATA LAYER (managed or self-hosted)             │
-│                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐      │
-│  │ Qdrant       │  │ PostgreSQL   │  │ Redis                │      │
-│  │ (self-hosted │  │ (RDS /       │  │ (ElastiCache /       │      │
-│  │  or Cloud)   │  │  Cloud SQL)  │  │  Memorystore)        │      │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘      │
-└─────────────────────────────────────────────────────────────────────┘
+    subgraph Frontend["🖥️ Frontend React"]
+        ChatUI["Chat UI"]
+        Upload["Upload Documents"]
+        History["Historique Conversations"]
+    end
 
-┌─────────────────────────────────────────────────────────────────────┐
-│                     OBSERVABILITY                                    │
-│  OpenTelemetry → Jaeger / Grafana Tempo / Datadog / New Relic       │
-│  Langfuse     → LLM traces, generations, spans, scores, costs      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+    subgraph Backend["⚙️ Backend FastAPI"]
+        direction TB
+        subgraph Middleware["Middleware"]
+            Auth["Auth JWT + API Key"]
+            OTel["OpenTelemetry"]
+            LF["Langfuse Traces"]
+        end
 
-## Flux de données
+        subgraph Routes["Routes API"]
+            ChatAPI["/chat stream"]
+            DocsAPI["/documents upload"]
+            AssistAPI["/assistants CRUD"]
+            AuthAPI["/auth token"]
+        end
 
-### 1. Ingestion de documents
-```
-Document (PDF/DOCX/MD/TXT/PNG/JPG/TIFF...)
-    │
-    ├──→ Object Storage (S3 / GCS / Azure Blob)   ← raw file backup
-    │
-    ▼
-┌──────────────┐     ┌──────────────────────────────────┐
-│  Parser       │────→│  OCR (si image/scan)              │
-│              │     │  local: Tesseract                 │
-│              │     │  cloud: Textract / Azure DI / DAI │
-└──────┬───────┘     └──────────────────────────────────┘
-       │
-       ▼ Texte brut
-┌──────────────┐
-│  Chunker      │──→ Chunks (500-1000 tokens, overlap 100)
-└──────┬───────┘
-       ▼
-┌──────────────┐       ┌──────────────┐
-│  LiteLLM     │──────→│  Embedding   │
-│  (embed)     │       │  Model       │
-└──────┬───────┘       └──────────────┘
-       ▼
-┌──────────────┐
-│  Qdrant      │──→ Vecteurs stockés avec metadata
-│  (or Cloud)  │
-└──────────────┘
+        CeleryW["Celery Worker<br/><i>async doc processing</i>"]
 
-Note: si USE_CELERY=true, les étapes 2-5 sont exécutées
-en arrière-plan par un worker Celery.
+        subgraph RAG["🔍 RAG Engine"]
+            Parser["Parser + OCR"]
+            Chunker["Chunker"]
+            Embeddings["Embeddings<br/><i>LiteLLM</i>"]
+            Reranker["Reranker<br/><i>cross-encoder</i>"]
+            CtxBuilder["Context Builder"]
+        end
+
+        subgraph OCR["OCR Providers"]
+            Tesseract["Tesseract"]
+            Textract["AWS Textract"]
+            AzureDI["Azure Doc Intelligence"]
+            GCPDAI["GCP Document AI"]
+        end
+    end
+
+    subgraph LiteLLM["🔀 LiteLLM Proxy"]
+        LB["Load Balancing + Fallback"]
+        Bedrock["AWS Bedrock<br/>Claude + Embed"]
+        Foundry["Azure Foundry<br/>GPT-4o + Embed"]
+        Vertex["Google Vertex<br/>Gemini + Embed"]
+    end
+
+    subgraph Storage["☁️ Object Storage"]
+        S3["S3"]
+        GCS["GCS"]
+        AzureBlob["Azure Blob"]
+    end
+
+    subgraph Data["💾 Data Layer"]
+        Qdrant[("Qdrant<br/>Vector DB")]
+        Postgres[("PostgreSQL<br/>Metadata + History")]
+        Redis[("Redis<br/>Cache + Broker")]
+    end
+
+    subgraph Observability["📊 Observabilité"]
+        OTelCol["OpenTelemetry → Jaeger / Grafana / Datadog"]
+        LangfuseObs["Langfuse → Traces LLM, coûts, qualité"]
+    end
+
+    Browser -->|"HTTPS + JWT"| Frontend
+    Frontend -->|"REST + SSE"| Backend
+    DocsAPI --> CeleryW
+    CeleryW --> RAG
+    ChatAPI --> RAG
+    Parser --> OCR
+    RAG --> LiteLLM
+    LB --> Bedrock
+    LB --> Foundry
+    LB --> Vertex
+    DocsAPI --> Storage
+    RAG --> Qdrant
+    Backend --> Postgres
+    Backend --> Redis
+    Backend --> Observability
 ```
 
-### 2. Chat avec RAG
+---
+
+## 2. Flux d'ingestion de documents
+
+```mermaid
+flowchart TD
+    Doc["📄 Document<br/><i>PDF / DOCX / MD / TXT / PNG / JPG / TIFF</i>"]
+
+    Doc --> ObjStore["☁️ Object Storage<br/><i>S3 / GCS / Azure Blob</i><br/>raw file backup"]
+    Doc --> ParseStep
+
+    subgraph Pipeline["Pipeline d'ingestion"]
+        ParseStep["1️⃣ Parser"]
+        OCRStep["🔍 OCR<br/><i>si image/scan</i>"]
+        ChunkStep["2️⃣ Chunker<br/><i>500-1000 tokens, overlap 100</i>"]
+        EmbedStep["3️⃣ Embedding<br/><i>via LiteLLM</i>"]
+        StoreStep["4️⃣ Stockage Qdrant<br/><i>vecteurs + metadata</i>"]
+    end
+
+    ParseStep -->|"image/scan ?"| OCRStep
+    OCRStep -->|"texte extrait"| ParseStep
+    ParseStep -->|"texte brut"| ChunkStep
+    ChunkStep -->|"chunks"| EmbedStep
+    EmbedStep -->|"vecteurs"| StoreStep
+
+    subgraph OCRProviders["OCR Providers"]
+        direction LR
+        Tess["Tesseract<br/><i>local, défaut</i>"]
+        AWS["AWS Textract"]
+        Azure["Azure Doc Intelligence"]
+        GCP["GCP Document AI"]
+    end
+
+    OCRStep --> OCRProviders
+
+    Note["💡 Si USE_CELERY=true,<br/>les étapes 1-4 sont<br/>exécutées en arrière-plan"]
+
+    style Doc fill:#4a90d9,color:#fff
+    style ObjStore fill:#f5a623,color:#fff
+    style StoreStep fill:#7ed321,color:#fff
+    style Note fill:#fff3cd,color:#856404,stroke:#ffc107
 ```
-Question utilisateur
-    │
-    ▼
-┌──────────────┐       ┌──────────────┐
-│  Embedding   │──────→│  Qdrant      │
-│  de la query │       │  Similarity  │
-└──────────────┘       │  Search (2×k)│
-                       └──────┬───────┘
-                              │ Candidats
-                              ▼
-                       ┌──────────────┐
-                       │  Reranker    │  (cross-encoder, optional)
-                       │  Top-K final │
-                       └──────┬───────┘
-                              │ Chunks reranked
-                              ▼
-                       ┌──────────────┐
-                       │  Context     │
-                       │  Builder     │
-                       └──────┬───────┘
-                              │ Prompt enrichi
-                              ▼
-                       ┌──────────────┐
-                       │  LiteLLM     │──→ Bedrock / Foundry / Vertex
-                       │  (completion)│
-                       └──────┬───────┘
-                              │ Réponse streamée
-                              ▼
-                       Réponse à l'utilisateur
-                       (avec sources citées)
+
+---
+
+## 3. Flux Chat avec RAG
+
+```mermaid
+flowchart TD
+    Question["💬 Question utilisateur"]
+
+    Question --> EmbedQ["1️⃣ Embedding de la query<br/><i>via LiteLLM</i>"]
+    EmbedQ --> Search["2️⃣ Qdrant Similarity Search<br/><i>récupère 2×k candidats</i>"]
+    Search --> Rerank["3️⃣ Reranker<br/><i>cross-encoder, optionnel</i><br/>→ Top-K final"]
+    Rerank --> Context["4️⃣ Context Builder<br/><i>assemble le prompt enrichi</i>"]
+    Context --> LLM["5️⃣ LiteLLM Completion<br/><i>Bedrock / Foundry / Vertex</i>"]
+    LLM --> Response["✅ Réponse streamée<br/><i>avec sources citées</i>"]
+
+    style Question fill:#4a90d9,color:#fff
+    style Response fill:#7ed321,color:#fff
+    style Rerank fill:#f5a623,color:#fff
+```
+
+---
+
+## 4. Stack technique
+
+```mermaid
+graph LR
+    subgraph Presentation["Présentation"]
+        React["React + TypeScript + Tailwind"]
+    end
+
+    subgraph Application["Application"]
+        FastAPI["FastAPI<br/><i>Python</i>"]
+        Celery["Celery + Redis<br/><i>Background Jobs</i>"]
+    end
+
+    subgraph AI["Intelligence"]
+        LiteLLM["LiteLLM<br/><i>Proxy multi-provider</i>"]
+        CrossEncoder["Cross-encoder<br/><i>Reranking</i>"]
+    end
+
+    subgraph Données["Stockage"]
+        Qdrant["Qdrant<br/><i>Vecteurs</i>"]
+        PG["PostgreSQL<br/><i>Metadata</i>"]
+        RedisC["Redis<br/><i>Cache</i>"]
+        ObjSt["S3 / GCS / Blob<br/><i>Fichiers</i>"]
+    end
+
+    subgraph Ops["Ops & Observabilité"]
+        Docker["Docker Compose<br/><i>Local</i>"]
+        K8s["Terraform + K8s<br/><i>Cloud</i>"]
+        OTel["OpenTelemetry"]
+        Langfuse["Langfuse"]
+    end
+
+    React --> FastAPI
+    FastAPI --> Celery
+    FastAPI --> LiteLLM
+    FastAPI --> CrossEncoder
+    FastAPI --> Qdrant
+    FastAPI --> PG
+    FastAPI --> RedisC
+    FastAPI --> ObjSt
+    FastAPI --> OTel
+    FastAPI --> Langfuse
+```
+
+---
+
+## 5. Modèles supportés via LiteLLM
+
+```mermaid
+graph TD
+    LiteLLM["🔀 LiteLLM Proxy<br/><i>Load Balancing + Fallback</i>"]
+
+    subgraph AWS["AWS Bedrock"]
+        BComp["bedrock/anthropic.claude-3-5-sonnet"]
+        BEmbed["bedrock/amazon.titan-embed-text-v2"]
+    end
+
+    subgraph Azure["Azure AI Foundry"]
+        AComp["azure/gpt-4o"]
+        AEmbed["azure/text-embedding-3-small"]
+    end
+
+    subgraph Google["Google Vertex"]
+        GComp["vertex_ai/gemini-2.0-flash"]
+        GEmbed["vertex_ai/text-embedding-005"]
+    end
+
+    LiteLLM -->|"Completion"| BComp
+    LiteLLM -->|"Embedding"| BEmbed
+    LiteLLM -->|"Completion"| AComp
+    LiteLLM -->|"Embedding"| AEmbed
+    LiteLLM -->|"Completion"| GComp
+    LiteLLM -->|"Embedding"| GEmbed
+
+    style LiteLLM fill:#6c5ce7,color:#fff
+    style AWS fill:#ff9900,color:#fff
+    style Azure fill:#0078d4,color:#fff
+    style Google fill:#4285f4,color:#fff
 ```
 
 ## Stack technique
@@ -273,57 +358,77 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com    # ou self-hosted: http://langfuse:3000
 ```
 
-### Traces instrumentées
+---
 
+## 7. Observabilité Langfuse — Traces
+
+### Chat Request
+
+```mermaid
+flowchart TD
+    subgraph Trace["📊 Trace: chat-stream"]
+        subgraph RAGSpan["Span: rag-retrieval"]
+            EmbedGen["Generation: embedding<br/><i>query embedding via LiteLLM</i>"]
+            RerankSpan["Span: rerank<br/><i>cross-encoder reranking</i>"]
+        end
+
+        LLMGen["Generation: llm-stream-completion<br/><i>model, input, output, tokens, latence</i>"]
+    end
+
+    EmbedGen --> RerankSpan
+    RerankSpan --> LLMGen
+
+    style Trace fill:#f0f0f0,stroke:#333
+    style RAGSpan fill:#e8f4fd,stroke:#4a90d9
+    style EmbedGen fill:#fff,stroke:#f5a623
+    style LLMGen fill:#fff,stroke:#7ed321
 ```
-Chat Request (trace: "chat-stream" ou "chat")
-│
-├── rag-retrieval (span)
-│   ├── embedding (generation) — query embedding via LiteLLM
-│   └── rerank (span) — cross-encoder reranking (si activé)
-│
-└── llm-stream-completion / llm-completion (generation)
-    └── model, input messages, output, usage (tokens), latence
 
-Document Ingestion (trace: "document-ingestion")
-│
-├── upload-storage (span) — S3 / GCS / Azure Blob / local
-├── parse-document (span) — extraction texte + OCR
-├── chunk-text (span) — découpage en chunks
-├── embed-chunks (span)
-│   └── embedding (generation) × N batches
-└── store-vectors (span) — stockage Qdrant
+### Document Ingestion
+
+```mermaid
+flowchart TD
+    subgraph Trace2["📊 Trace: document-ingestion"]
+        UploadSpan["Span: upload-storage<br/><i>S3 / GCS / Azure Blob / local</i>"]
+        ParseSpan["Span: parse-document<br/><i>extraction texte + OCR</i>"]
+        ChunkSpan["Span: chunk-text<br/><i>découpage en chunks</i>"]
+        subgraph EmbedSpan["Span: embed-chunks"]
+            EmbedBatch["Generation: embedding × N batches"]
+        end
+        StoreSpan["Span: store-vectors<br/><i>stockage Qdrant</i>"]
+    end
+
+    UploadSpan --> ParseSpan --> ChunkSpan --> EmbedSpan --> StoreSpan
+
+    style Trace2 fill:#f0f0f0,stroke:#333
+    style EmbedSpan fill:#e8f4fd,stroke:#4a90d9
 ```
 
-### Ce que Langfuse capture
+### Données capturées par Langfuse
 
-| Élément | Données |
-|---------|---------|
-| **Traces** | Chaque requête chat et ingestion de document |
-| **Generations** | Chaque appel LLM (completion + embedding) avec model, input, output, tokens |
-| **Spans** | Étapes intermédiaires (retrieval, reranking, parsing, chunking, storage) |
-| **Metadata** | Assistant, collection, modèle, provider, taille fichier |
-| **Sessions** | Groupement par conversation_id |
-| **Coûts** | Calcul automatique via les tokens (input/output) |
-
-### Langfuse Cloud vs Self-hosted
-
-| Déploiement | Configuration |
-|-------------|---------------|
-| **Langfuse Cloud** | `LANGFUSE_HOST=https://cloud.langfuse.com` (défaut) |
-| **Self-hosted** | `LANGFUSE_HOST=http://langfuse:3000` + ajouter service Docker |
-
-Pour le self-hosted, ajouter dans `docker-compose.yml` :
-```yaml
-langfuse:
-  image: langfuse/langfuse:2
-  ports:
-    - "3001:3000"
-  environment:
-    - DATABASE_URL=postgresql://raguser:ragpassword@postgres:5432/langfuse
-    - NEXTAUTH_URL=http://localhost:3001
-    - NEXTAUTH_SECRET=change-me
-    - SALT=change-me
-  depends_on:
-    - postgres
+```mermaid
+mindmap
+  root((Langfuse))
+    Traces
+      Chaque requête chat
+      Chaque ingestion document
+    Generations
+      Appels LLM completion
+      Appels embedding
+      Model / Input / Output / Tokens
+    Spans
+      Retrieval
+      Reranking
+      Parsing
+      Chunking
+      Storage
+    Metadata
+      Assistant
+      Collection
+      Modèle / Provider
+      Taille fichier
+    Sessions
+      Groupement par conversation_id
+    Coûts
+      Calcul auto via tokens
 ```
