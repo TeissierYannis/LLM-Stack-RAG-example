@@ -1,0 +1,37 @@
+# ==============================================
+# Docker Compose Override - LOCAL MODE (LM Studio)
+# ==============================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up
+#
+# Prerequisites:
+#   1. LM Studio running on host with server started on port 1234
+#   2. Load a completion model (e.g. Qwen 2.5 7B, Mistral 7B, Llama 3.1 8B)
+#   3. Load an embedding model (e.g. nomic-embed-text-v1.5)
+
+services:
+  backend:
+    environment: &local-env
+      # Override models to use local names
+      - COMPLETION_MODEL=default-completion
+      - EMBEDDING_MODEL=default-embedding
+      # Storage: local only
+      - STORAGE_PROVIDER=local
+      # OCR: local Tesseract only
+      - OCR_PROVIDER=local
+      # No cloud services needed
+      - RERANK_MODEL=
+      - QDRANT_URL=
+      - QDRANT_API_KEY=
+
+  worker:
+    environment: *local-env
+
+  litellm:
+    volumes:
+      - ./litellm/config.local.yaml:/app/config.yaml
+    environment:
+      # host.docker.internal resolves to the host machine (where LM Studio runs)
+      - LM_STUDIO_URL=http://host.docker.internal:1234/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

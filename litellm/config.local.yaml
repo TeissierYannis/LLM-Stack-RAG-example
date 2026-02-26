@@ -1,0 +1,51 @@
+# ==============================================
+# LiteLLM Proxy Configuration - LOCAL MODE
+# Uses LM Studio (OpenAI-compatible API on host)
+# ==============================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up
+#
+# LM Studio must be running on the host machine with:
+#   - Server started on port 1234
+#   - Completion model loaded (e.g. Qwen 2.5, Mistral, Llama 3.1)
+#   - Embedding model loaded (e.g. nomic-embed-text)
+
+model_list:
+  # ---- Completion Models ----
+
+  # LM Studio - Completion (default)
+  # The model name here must match the model loaded in LM Studio
+  - model_name: default-completion
+    litellm_params:
+      model: openai/lm-studio-completion
+      api_base: os.environ/LM_STUDIO_URL
+      api_key: "lm-studio"               # LM Studio ignores the key but LiteLLM requires one
+
+  # Alias for direct model selection in the UI
+  - model_name: local-llm
+    litellm_params:
+      model: openai/lm-studio-completion
+      api_base: os.environ/LM_STUDIO_URL
+      api_key: "lm-studio"
+
+  # ---- Embedding Models ----
+
+  # LM Studio - Embedding
+  - model_name: default-embedding
+    litellm_params:
+      model: openai/lm-studio-embedding
+      api_base: os.environ/LM_STUDIO_URL
+      api_key: "lm-studio"
+
+litellm_settings:
+  num_retries: 1
+  request_timeout: 300          # Local models can be slower, allow 5min
+  set_verbose: false
+  drop_params: true             # Drop unsupported params (LM Studio ignores some)
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
