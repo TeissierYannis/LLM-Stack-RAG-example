@@ -3,7 +3,7 @@
 from app.rag.embeddings import get_single_embedding
 from app.rag.vectorstore import search_similar
 
-SYSTEM_PROMPT = """Tu es un assistant d'entreprise intelligent. Tu réponds aux questions en te basant sur les documents fournis dans le contexte.
+DEFAULT_SYSTEM_PROMPT = """Tu es un assistant d'entreprise intelligent. Tu réponds aux questions en te basant sur les documents fournis dans le contexte.
 
 Règles:
 - Réponds de manière précise et concise en te basant sur le contexte fourni
@@ -19,14 +19,18 @@ RAG_PROMPT_TEMPLATE = """Contexte (documents pertinents):
 Question: {question}"""
 
 
-async def retrieve_context(query: str, top_k: int | None = None) -> tuple[str, list[dict]]:
-    """Retrieve relevant context for a query.
+async def retrieve_context(
+    collection_name: str,
+    query: str,
+    top_k: int | None = None,
+) -> tuple[str, list[dict]]:
+    """Retrieve relevant context for a query from a specific assistant's collection.
 
     Returns:
         Tuple of (formatted context string, list of source documents)
     """
     query_embedding = await get_single_embedding(query)
-    results = await search_similar(query_embedding, top_k=top_k)
+    results = await search_similar(collection_name, query_embedding, top_k=top_k)
 
     if not results:
         return "", []
@@ -42,10 +46,12 @@ async def retrieve_context(query: str, top_k: int | None = None) -> tuple[str, l
 def build_rag_messages(
     query: str,
     context: str,
+    system_prompt: str | None = None,
     conversation_history: list[dict] | None = None,
 ) -> list[dict]:
     """Build the message list for the LLM call with RAG context."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+    messages = [{"role": "system", "content": prompt}]
 
     # Add conversation history if provided
     if conversation_history:

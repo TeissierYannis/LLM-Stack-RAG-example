@@ -6,10 +6,53 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+# --- Assistant ---
+class AssistantCreate(BaseModel):
+    name: str
+    description: str | None = None
+    system_prompt: str = "Tu es un assistant d'entreprise intelligent. Réponds de manière précise et concise en te basant sur le contexte fourni."
+    model: str = "default-completion"
+    embedding_model: str = "default-embedding"
+    avatar_color: str = "#3b82f6"
+    chunk_size: int = 512
+    chunk_overlap: int = 100
+    top_k: int = 5
+
+
+class AssistantUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+    model: str | None = None
+    embedding_model: str | None = None
+    avatar_color: str | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    top_k: int | None = None
+
+
+class AssistantOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None
+    system_prompt: str
+    model: str
+    embedding_model: str
+    qdrant_collection: str
+    avatar_color: str
+    chunk_size: int
+    chunk_overlap: int
+    top_k: int
+    document_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
 # --- Chat ---
 class ChatRequest(BaseModel):
     message: str
     conversation_id: uuid.UUID | None = None
+    assistant_id: uuid.UUID | None = None
     model: str | None = None
     use_rag: bool = True
 
@@ -30,6 +73,8 @@ class ChatResponse(BaseModel):
 # --- Conversation ---
 class ConversationSummary(BaseModel):
     id: uuid.UUID
+    assistant_id: uuid.UUID | None
+    assistant_name: str | None = None
     title: str
     model: str
     created_at: datetime
@@ -47,6 +92,7 @@ class MessageOut(BaseModel):
 
 class ConversationDetail(BaseModel):
     id: uuid.UUID
+    assistant_id: uuid.UUID | None
     title: str
     model: str
     messages: list[MessageOut]
@@ -55,6 +101,7 @@ class ConversationDetail(BaseModel):
 # --- Document ---
 class DocumentOut(BaseModel):
     id: uuid.UUID
+    assistant_id: uuid.UUID
     filename: str
     file_type: str
     file_size: int

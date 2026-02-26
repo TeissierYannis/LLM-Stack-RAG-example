@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, conversations, documents, models
+from app.api import assistants, chat, conversations, documents, models
 from app.core.config import settings
 from app.core.database import init_db
 
@@ -27,6 +27,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(assistants.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")

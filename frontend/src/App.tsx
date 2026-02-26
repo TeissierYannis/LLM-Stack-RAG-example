@@ -10,10 +10,12 @@ export default function App() {
     messages,
     isStreaming,
     conversationId,
+    activeAssistant,
     selectedModel,
     useRag,
     setSelectedModel,
     setUseRag,
+    selectAssistant,
     sendMessage,
     stopStreaming,
     clearChat,
@@ -32,8 +34,10 @@ export default function App() {
     <div className="flex h-screen">
       <Sidebar
         currentConversationId={conversationId}
+        activeAssistant={activeAssistant}
         onNewChat={clearChat}
         onLoadConversation={loadConversation}
+        onSelectAssistant={selectAssistant}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
         useRag={useRag}
@@ -43,13 +47,24 @@ export default function App() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <div className="border-b bg-white px-6 py-3 flex items-center gap-3">
-          <Bot size={24} className="text-blue-600" />
+          {activeAssistant ? (
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold"
+              style={{ backgroundColor: activeAssistant.avatar_color }}
+            >
+              {activeAssistant.name[0].toUpperCase()}
+            </div>
+          ) : (
+            <Bot size={24} className="text-blue-600" />
+          )}
           <div>
             <h1 className="text-lg font-semibold text-gray-800">
-              Enterprise Chat RAG
+              {activeAssistant ? activeAssistant.name : "Enterprise Chat RAG"}
             </h1>
             <p className="text-xs text-gray-500">
-              {selectedModel} | RAG {useRag ? "ON" : "OFF"}
+              {activeAssistant
+                ? `${activeAssistant.model} | ${activeAssistant.document_count} documents`
+                : `${selectedModel} | RAG ${useRag ? "ON" : "OFF"}`}
             </p>
           </div>
         </div>
@@ -61,11 +76,31 @@ export default function App() {
         >
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <Bot size={48} className="mb-4" />
-              <p className="text-lg">Posez une question</p>
-              <p className="text-sm mt-1">
-                Uploadez des documents pour activer le RAG
-              </p>
+              {activeAssistant ? (
+                <>
+                  <div
+                    className="w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-4"
+                    style={{ backgroundColor: activeAssistant.avatar_color }}
+                  >
+                    {activeAssistant.name[0].toUpperCase()}
+                  </div>
+                  <p className="text-lg">{activeAssistant.name}</p>
+                  {activeAssistant.description && (
+                    <p className="text-sm mt-1">{activeAssistant.description}</p>
+                  )}
+                  <p className="text-sm mt-2 text-gray-300">
+                    {activeAssistant.document_count} document{activeAssistant.document_count !== 1 ? "s" : ""} dans la base de connaissances
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Bot size={48} className="mb-4" />
+                  <p className="text-lg">Posez une question</p>
+                  <p className="text-sm mt-1">
+                    Selectionnez un assistant ou chattez librement
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="max-w-4xl mx-auto">

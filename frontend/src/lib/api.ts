@@ -1,7 +1,52 @@
+import type { AssistantCreate } from "../types";
+
 const API_BASE = "/api";
 
-export async function fetchConversations() {
-  const res = await fetch(`${API_BASE}/conversations`);
+// --- Assistants ---
+export async function fetchAssistants() {
+  const res = await fetch(`${API_BASE}/assistants`);
+  if (!res.ok) throw new Error("Failed to fetch assistants");
+  return res.json();
+}
+
+export async function fetchAssistant(id: string) {
+  const res = await fetch(`${API_BASE}/assistants/${id}`);
+  if (!res.ok) throw new Error("Failed to fetch assistant");
+  return res.json();
+}
+
+export async function createAssistant(data: AssistantCreate) {
+  const res = await fetch(`${API_BASE}/assistants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create assistant");
+  return res.json();
+}
+
+export async function updateAssistant(id: string, data: Partial<AssistantCreate>) {
+  const res = await fetch(`${API_BASE}/assistants/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update assistant");
+  return res.json();
+}
+
+export async function deleteAssistant(id: string) {
+  const res = await fetch(`${API_BASE}/assistants/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete assistant");
+  return res.json();
+}
+
+// --- Conversations ---
+export async function fetchConversations(assistantId?: string) {
+  const params = assistantId ? `?assistant_id=${assistantId}` : "";
+  const res = await fetch(`${API_BASE}/conversations${params}`);
   if (!res.ok) throw new Error("Failed to fetch conversations");
   return res.json();
 }
@@ -20,16 +65,17 @@ export async function deleteConversation(id: string) {
   return res.json();
 }
 
-export async function fetchDocuments() {
-  const res = await fetch(`${API_BASE}/documents`);
+// --- Documents (scoped per assistant) ---
+export async function fetchDocuments(assistantId: string) {
+  const res = await fetch(`${API_BASE}/assistants/${assistantId}/documents`);
   if (!res.ok) throw new Error("Failed to fetch documents");
   return res.json();
 }
 
-export async function uploadDocument(file: File) {
+export async function uploadDocument(assistantId: string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/documents`, {
+  const res = await fetch(`${API_BASE}/assistants/${assistantId}/documents`, {
     method: "POST",
     body: formData,
   });
@@ -37,8 +83,8 @@ export async function uploadDocument(file: File) {
   return res.json();
 }
 
-export async function deleteDocument(id: string) {
-  const res = await fetch(`${API_BASE}/documents/${id}`, {
+export async function deleteDocument(assistantId: string, docId: string) {
+  const res = await fetch(`${API_BASE}/assistants/${assistantId}/documents/${docId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Failed to delete document");
@@ -59,70 +105,10 @@ export interface ChatStreamCallbacks {
   onError: (error: string) => void;
 }
 
-export async function chatStream(
-  message: string,
-  conversationId: string | null,
-  model: string | null,
-  useRag: boolean,
-  callbacks: ChatStreamCallbacks
-) {
-  const res = await fetch(`${API_BASE}/chat/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message,
-      conversation_id: conversationId,
-      model,
-      use_rag: useRag,
-    }),
-  });
-
-  if (!res.ok) {
-    callbacks.onError(`HTTP ${res.status}`);
-    return;
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) return;
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (line.startsWith("event: ")) {
-        const event = line.slice(7).trim();
-        // Next line should be data
-        continue;
-      }
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        // Determine event type from previous event line
-        // SSE format: event line then data line
-        // We need to track the current event
-        continue;
-      }
-
-      // Parse combined event+data
-      if (line.includes("event:") || line.includes("data:")) continue;
-    }
-  }
-
-  // Simpler SSE parsing approach
-  callbacks.onDone();
-}
-
-// More robust SSE parser
 export function chatStreamSSE(
   message: string,
   conversationId: string | null,
+  assistantId: string | null,
   model: string | null,
   useRag: boolean,
   callbacks: ChatStreamCallbacks
@@ -137,6 +123,7 @@ export function chatStreamSSE(
         body: JSON.stringify({
           message,
           conversation_id: conversationId,
+          assistant_id: assistantId,
           model,
           use_rag: useRag,
         }),

@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef } from "react";
 import { chatStreamSSE } from "../lib/api";
-import type { Message, SourceReference } from "../types";
+import type { Assistant, Message, SourceReference } from "../types";
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [activeAssistant, setActiveAssistant] = useState<Assistant | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>("default-completion");
   const [useRag, setUseRag] = useState(true);
   const cancelRef = useRef<(() => void) | null>(null);
@@ -14,14 +15,12 @@ export function useChat() {
     (content: string) => {
       if (!content.trim() || isStreaming) return;
 
-      // Add user message
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: "user",
         content,
       };
 
-      // Add placeholder for assistant
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -32,10 +31,13 @@ export function useChat() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsStreaming(true);
 
+      const model = activeAssistant?.model || selectedModel;
+
       const cancel = chatStreamSSE(
         content,
         conversationId,
-        selectedModel,
+        activeAssistant?.id || null,
+        model,
         useRag,
         {
           onMessage: (chunk) => {
@@ -86,12 +88,22 @@ export function useChat() {
 
       cancelRef.current = cancel;
     },
-    [conversationId, selectedModel, useRag, isStreaming]
+    [conversationId, activeAssistant, selectedModel, useRag, isStreaming]
   );
 
   const stopStreaming = useCallback(() => {
     cancelRef.current?.();
     setIsStreaming(false);
+  }, []);
+
+  const selectAssistant = useCallback((assistant: Assistant | null) => {
+    setActiveAssistant(assistant);
+    setMessages([]);
+    setConversationId(null);
+    if (assistant) {
+      setSelectedModel(assistant.model);
+      setUseRag(true);
+    }
   }, []);
 
   const clearChat = useCallback(() => {
@@ -111,10 +123,12 @@ export function useChat() {
     messages,
     isStreaming,
     conversationId,
+    activeAssistant,
     selectedModel,
     useRag,
     setSelectedModel,
     setUseRag,
+    selectAssistant,
     sendMessage,
     stopStreaming,
     clearChat,

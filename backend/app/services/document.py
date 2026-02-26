@@ -19,13 +19,16 @@ EMBED_BATCH_SIZE = 32
 
 async def ingest_document(
     db: AsyncSession,
+    assistant_id: uuid.UUID,
+    collection_name: str,
     filename: str,
     file_type: str,
     content: bytes,
 ) -> Document:
-    """Full document ingestion pipeline: parse → chunk → embed → store."""
+    """Full document ingestion pipeline: parse → chunk → embed → store in assistant's collection."""
     doc = Document(
         id=uuid.uuid4(),
+        assistant_id=assistant_id,
         filename=filename,
         file_type=file_type,
         file_size=len(content),
@@ -56,8 +59,9 @@ async def ingest_document(
             batch_embeddings = await get_embeddings(batch)
             all_embeddings.extend(batch_embeddings)
 
-        # 4. Store in vector DB
+        # 4. Store in assistant's Qdrant collection
         await store_chunks(
+            collection_name=collection_name,
             document_id=str(doc.id),
             filename=filename,
             chunks=chunks,
@@ -66,7 +70,7 @@ async def ingest_document(
 
         doc.status = "ready"
         await db.commit()
-        logger.info(f"Ingested document {filename}: {len(chunks)} chunks")
+        logger.info(f"Ingested document {filename}: {len(chunks)} chunks → {collection_name}")
         return doc
 
     except Exception as e:
@@ -77,13 +81,13 @@ async def ingest_document(
         raise
 
 
-async def remove_document(db: AsyncSession, document_id: uuid.UUID):
+async def remove_document(db: AsyncSession, document_id: uuid.UUID, collection_name: str):
     """Remove a document and its chunks from both DB and vector store."""
     doc = await db.get(Document, document_id)
     if not doc:
         return None
 
-    await delete_document_chunks(str(document_id))
+    await delete_document_chunks(collection_name, str(document_id))
     await db.delete(doc)
     await db.commit()
     return doc

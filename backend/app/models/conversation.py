@@ -12,6 +12,9 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assistant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("assistants.id", ondelete="SET NULL"), nullable=True
+    )
     title: Mapped[str] = mapped_column(default="Nouvelle conversation")
     model: Mapped[str] = mapped_column(default="default-completion")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -19,7 +22,11 @@ class Conversation(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    assistant: Mapped["Assistant | None"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
+
+
+from app.models.assistant import Assistant  # noqa: E402, F811
 
 
 class Message(Base):
