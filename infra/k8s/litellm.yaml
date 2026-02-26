@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: enterprise-rag
+data:
+  config.yaml: |
+    model_list:
+      - model_name: claude-sonnet
+        litellm_params:
+          model: bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+          aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+          aws_region_name: os.environ/AWS_REGION_NAME
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+          api_key: os.environ/AZURE_API_KEY
+          api_base: os.environ/AZURE_API_BASE
+          api_version: os.environ/AZURE_API_VERSION
+      - model_name: gemini-flash
+        litellm_params:
+          model: vertex_ai/gemini-2.0-flash
+          vertex_project: os.environ/VERTEX_PROJECT
+          vertex_location: os.environ/VERTEX_LOCATION
+      - model_name: default-completion
+        litellm_params:
+          model: bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+          aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+          aws_region_name: os.environ/AWS_REGION_NAME
+      - model_name: default-embedding
+        litellm_params:
+          model: bedrock/amazon.titan-embed-text-v2:0
+          aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+          aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+          aws_region_name: os.environ/AWS_REGION_NAME
+    litellm_settings:
+      num_retries: 2
+      request_timeout: 120
+      drop_params: true
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: enterprise-rag
+  labels:
+    app: litellm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-latest
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: rag-config
+            - secretRef:
+                name: rag-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: enterprise-rag
+spec:
+  selector:
+    app: litellm
+  ports:
+    - port: 4000
+      targetPort: 4000
+  type: ClusterIP

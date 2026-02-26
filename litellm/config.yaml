@@ -1,0 +1,113 @@
+# ==============================================
+# LiteLLM Proxy Configuration
+# Multi-provider: Bedrock, Azure AI Foundry, Vertex AI
+# ==============================================
+
+model_list:
+  # ---- Completion Models ----
+
+  # AWS Bedrock - Claude
+  - model_name: claude-sonnet
+    litellm_params:
+      model: bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # Azure AI Foundry - GPT-4o
+  - model_name: gpt-4o
+    litellm_params:
+      model: azure/gpt-4o
+      api_key: os.environ/AZURE_API_KEY
+      api_base: os.environ/AZURE_API_BASE
+      api_version: os.environ/AZURE_API_VERSION
+
+  # Google Vertex AI - Gemini
+  - model_name: gemini-flash
+    litellm_params:
+      model: vertex_ai/gemini-2.0-flash
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+
+  # ---- Embedding Models ----
+
+  # AWS Bedrock - Titan Embed
+  - model_name: embed-titan
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # Azure - text-embedding-3-small
+  - model_name: embed-azure
+    litellm_params:
+      model: azure/text-embedding-3-small
+      api_key: os.environ/AZURE_API_KEY
+      api_base: os.environ/AZURE_API_BASE
+      api_version: os.environ/AZURE_API_VERSION
+
+  # Google Vertex - text-embedding
+  - model_name: embed-vertex
+    litellm_params:
+      model: vertex_ai/text-embedding-005
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+
+  # ---- Fallback / Load-balanced completion ----
+  - model_name: default-completion
+    litellm_params:
+      model: bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+      aws_region_name: os.environ/AWS_REGION_NAME
+  - model_name: default-completion
+    litellm_params:
+      model: azure/gpt-4o
+      api_key: os.environ/AZURE_API_KEY
+      api_base: os.environ/AZURE_API_BASE
+      api_version: os.environ/AZURE_API_VERSION
+  - model_name: default-completion
+    litellm_params:
+      model: vertex_ai/gemini-2.0-flash
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+
+  # ---- Fallback / Load-balanced embedding ----
+  - model_name: default-embedding
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+      aws_region_name: os.environ/AWS_REGION_NAME
+  - model_name: default-embedding
+    litellm_params:
+      model: azure/text-embedding-3-small
+      api_key: os.environ/AZURE_API_KEY
+      api_base: os.environ/AZURE_API_BASE
+      api_version: os.environ/AZURE_API_VERSION
+  - model_name: default-embedding
+    litellm_params:
+      model: vertex_ai/text-embedding-005
+      vertex_project: os.environ/VERTEX_PROJECT
+      vertex_location: os.environ/VERTEX_LOCATION
+
+litellm_settings:
+  # Fallback: si le premier modèle échoue, essayer le suivant
+  num_retries: 2
+  request_timeout: 120
+  fallbacks:
+    - claude-sonnet: [gpt-4o, gemini-flash]
+    - gpt-4o: [claude-sonnet, gemini-flash]
+    - gemini-flash: [claude-sonnet, gpt-4o]
+  set_verbose: false
+  drop_params: true
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
