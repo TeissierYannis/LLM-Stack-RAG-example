@@ -61,4 +61,4 @@ langfuse==2.60.10
 
 # Utils
 python-dotenv==1.0.1
-httpx==0.28.1
+httpx==0.27.2
