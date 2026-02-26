@@ -16,8 +16,9 @@ import {
   fetchDocuments,
   uploadDocument,
   deleteDocument,
+  fetchOCRInfo,
 } from "../lib/api";
-import type { Assistant, Document } from "../types";
+import type { Assistant, Document, OCRInfo } from "../types";
 
 interface Props {
   activeAssistant: Assistant | null;
@@ -41,6 +42,7 @@ export default function AssistantPanel({ activeAssistant, onSelect }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<Record<string, Document[]>>({});
   const [uploading, setUploading] = useState(false);
+  const [ocrInfo, setOcrInfo] = useState<OCRInfo | null>(null);
 
   // Create form
   const [name, setName] = useState("");
@@ -53,6 +55,7 @@ export default function AssistantPanel({ activeAssistant, onSelect }: Props) {
 
   useEffect(() => {
     loadAssistants();
+    fetchOCRInfo().then(setOcrInfo).catch(() => {});
   }, []);
 
   async function loadAssistants() {
@@ -284,6 +287,11 @@ export default function AssistantPanel({ activeAssistant, onSelect }: Props) {
                     disabled={uploading}
                   />
                 </label>
+                {ocrInfo && (
+                  <div className={`text-[10px] px-2 py-0.5 mb-1 ${ocrInfo.cloud_enabled ? "text-cyan-400" : "text-gray-500"}`}>
+                    OCR: {ocrInfo.provider_label}
+                  </div>
+                )}
                 {(documents[a.id] || []).map((doc) => (
                   <div
                     key={doc.id}

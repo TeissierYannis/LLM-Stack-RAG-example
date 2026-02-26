@@ -34,6 +34,17 @@ services:
       - LITELLM_PROXY_URL=http://litellm:4000
       - QDRANT_HOST=qdrant
       - REDIS_URL=redis://redis:6379/0
+      # OCR provider: local | aws_textract | azure_di | google_docai | auto
+      - OCR_PROVIDER=${OCR_PROVIDER:-local}
+      # AWS (also used by LiteLLM for Bedrock)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      # Azure Document Intelligence
+      - AZURE_DI_ENDPOINT=${AZURE_DI_ENDPOINT:-}
+      - AZURE_DI_KEY=${AZURE_DI_KEY:-}
+      # Google Document AI
+      - GOOGLE_DOCAI_PROCESSOR=${GOOGLE_DOCAI_PROCESSOR:-}
 
   # ---- LiteLLM Proxy ----
   litellm:

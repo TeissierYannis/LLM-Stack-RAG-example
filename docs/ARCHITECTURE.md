@@ -33,8 +33,14 @@
 │  │  │ Document   │ │ Chunking   │ │ Context             │     │   │
 │  │  │ Parser     │ │ Strategy   │ │ Builder             │     │   │
 │  │  │(PDF,DOCX,  │ │(recursive, │ │(query+relevant      │     │   │
-│  │  │ MD,TXT)    │ │ semantic)  │ │ chunks → prompt)    │     │   │
-│  │  └────────────┘ └────────────┘ └─────────────────────┘     │   │
+│  │  │ MD,TXT,    │ │ semantic)  │ │ chunks → prompt)    │     │   │
+│  │  │ IMG+OCR)   │ │            │ │                     │     │   │
+│  │  └─────┬──────┘ └────────────┘ └─────────────────────┘     │   │
+│  │        │                                                    │   │
+│  │        ▼  OCR (configurable)                                │   │
+│  │  ┌──────────────────────────────────────────────────────┐  │   │
+│  │  │ local: Tesseract │ AWS Textract │ Azure DI │ GCP DAI │  │   │
+│  │  └──────────────────────────────────────────────────────┘  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │         │                                                           │
 │         │  Embedding / Completion requests                          │
@@ -73,11 +79,16 @@
 
 ### 1. Ingestion de documents
 ```
-Document (PDF/DOCX/MD/TXT)
+Document (PDF/DOCX/MD/TXT/PNG/JPG/TIFF...)
     │
     ▼
-┌──────────────┐
-│  Parser       │──→ Texte brut
+┌──────────────┐     ┌──────────────────────────────────┐
+│  Parser       │────→│  OCR (si image/scan)              │
+│              │     │  local: Tesseract                 │
+│              │     │  cloud: Textract / Azure DI / DAI │
+└──────┬───────┘     └──────────────────────────────────┘
+       │
+       ▼ Texte brut
 └──────┬───────┘
        ▼
 ┌──────────────┐
@@ -134,6 +145,21 @@ Question utilisateur
 | Cache | Redis | Sessions + cache |
 | Containers | Docker Compose | Orchestration locale |
 | Cloud | Terraform + K8s | Déploiement cloud |
+
+## OCR multi-provider
+
+| Provider | Service | Configuration |
+|----------|---------|---------------|
+| Local | Tesseract (fra+eng) | Par défaut, aucune config |
+| AWS | Textract | `OCR_PROVIDER=aws_textract` + AWS creds |
+| Azure | Document Intelligence | `OCR_PROVIDER=azure_di` + endpoint + key |
+| Google | Document AI | `OCR_PROVIDER=google_docai` + processor ID |
+| Auto | Essaie cloud → local | `OCR_PROVIDER=auto` |
+
+En mode `auto`, le système essaie chaque provider cloud configuré dans l'ordre
+(AWS → Azure → Google), puis fallback sur Tesseract local si tous échouent.
+
+Formats supportés : PDF (hybride texte+scan), PNG, JPG, JPEG, WebP, BMP, TIFF (multi-page).
 
 ## Modèles supportés via LiteLLM
 

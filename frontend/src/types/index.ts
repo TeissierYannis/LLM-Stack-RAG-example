@@ -80,3 +80,9 @@ export interface ModelsResponse {
   completion_models: ModelInfo[];
   embedding_models: ModelInfo[];
 }
+
+export interface OCRInfo {
+  provider: string;
+  provider_label: string;
+  cloud_enabled: boolean;
+}

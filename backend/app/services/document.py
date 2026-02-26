@@ -38,8 +38,8 @@ async def ingest_document(
     await db.commit()
 
     try:
-        # 1. Parse
-        text = parse_document(content, file_type)
+        # 1. Parse (async — supports cloud OCR providers)
+        text = await parse_document(content, file_type)
         doc.content_preview = text[:500]
 
         # 2. Chunk

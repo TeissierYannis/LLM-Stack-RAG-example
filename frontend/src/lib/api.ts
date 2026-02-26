@@ -97,6 +97,12 @@ export async function fetchModels() {
   return res.json();
 }
 
+export async function fetchOCRInfo() {
+  const res = await fetch(`${API_BASE}/models/ocr`);
+  if (!res.ok) throw new Error("Failed to fetch OCR info");
+  return res.json();
+}
+
 export interface ChatStreamCallbacks {
   onMessage: (chunk: string) => void;
   onSources: (sources: any[]) => void;

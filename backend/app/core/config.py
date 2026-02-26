@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     top_k_results: int = 5
 
+    # OCR provider: "local" (Tesseract), "aws_textract", "azure_di", "google_docai", or "auto"
+    ocr_provider: str = "local"
+
+    # AWS (shared with LiteLLM, also used for Textract)
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_region: str = ""
+
+    # Azure Document Intelligence
+    azure_di_endpoint: str = ""
+    azure_di_key: str = ""
+
+    # Google Document AI
+    google_docai_processor: str = ""  # projects/{project}/locations/{location}/processors/{id}
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

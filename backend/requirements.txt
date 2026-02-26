@@ -14,10 +14,15 @@ pypdf==5.1.0
 python-docx==1.1.2
 markdown==3.7
 
-# OCR
+# OCR - Local
 pytesseract==0.3.13
 Pillow==11.1.0
 pdf2image==1.17.0
+
+# OCR - Cloud providers (optional, install as needed)
+boto3==1.35.86                          # AWS Textract
+azure-ai-documentintelligence==1.0.0    # Azure Document Intelligence
+google-cloud-documentai==2.32.0         # Google Document AI
 
 # Vector store
 qdrant-client==1.12.1

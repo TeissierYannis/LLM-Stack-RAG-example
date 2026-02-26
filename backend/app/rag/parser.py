@@ -1,5 +1,11 @@
-"""Document parser: extracts text from PDF, DOCX, Markdown, TXT, and images (OCR)."""
+"""Document parser: extracts text from PDF, DOCX, Markdown, TXT, and images.
 
+OCR is delegated to the ocr module which supports cloud providers
+(AWS Textract, Azure Document Intelligence, Google Document AI) with
+automatic fallback to local Tesseract.
+"""
+
+import asyncio
 import io
 import logging
 import re
@@ -8,7 +14,8 @@ import markdown
 import pypdf
 from docx import Document as DocxDocument
 from PIL import Image
-import pytesseract
+
+from app.rag.ocr import ocr_extract, ocr_image
 
 logger = logging.getLogger(__name__)
 
@@ -16,16 +23,14 @@ logger = logging.getLogger(__name__)
 MIN_TEXT_LENGTH = 50
 
 
-def _ocr_image(image: Image.Image) -> str:
-    """Run Tesseract OCR on a PIL Image."""
-    return pytesseract.image_to_string(image, lang="fra+eng")
+async def parse_pdf(content: bytes) -> str:
+    """Parse PDF: tries text extraction first, falls back to OCR for scanned pages.
 
-
-def parse_pdf(content: bytes) -> str:
-    """Parse PDF: tries text extraction first, falls back to OCR for scanned pages."""
+    If there are scanned pages, uses the configured OCR provider (cloud or local).
+    """
     reader = pypdf.PdfReader(io.BytesIO(content))
-    text_parts = []
-    scanned_pages = []
+    text_parts: list[str] = []
+    scanned_pages: list[int] = []
 
     # First pass: try text extraction
     for i, page in enumerate(reader.pages):
@@ -35,17 +40,37 @@ def parse_pdf(content: bytes) -> str:
         else:
             scanned_pages.append(i)
 
-    # Second pass: OCR on pages that had no/little text
-    if scanned_pages:
-        logger.info(f"Running OCR on {len(scanned_pages)} scanned pages")
-        from pdf2image import convert_from_bytes
+    # All pages have text — no OCR needed
+    if not scanned_pages:
+        return "\n\n".join(text_parts)
 
-        images = convert_from_bytes(content, dpi=300)
-        for page_idx in scanned_pages:
-            if page_idx < len(images):
-                ocr_text = _ocr_image(images[page_idx])
+    logger.info(f"Running OCR on {len(scanned_pages)} scanned pages")
+
+    # Try cloud OCR on the entire PDF first (more efficient than page-by-page)
+    try:
+        ocr_text = await ocr_extract(content, "pdf")
+        if ocr_text and ocr_text.strip():
+            # If we got some native text pages too, merge them
+            if text_parts:
+                # Insert OCR text at the scanned page positions
+                # For simplicity with cloud OCR, just append OCR result
+                return "\n\n".join(text_parts) + "\n\n" + ocr_text
+            return ocr_text
+    except Exception as e:
+        logger.warning(f"Full-PDF OCR failed ({e}), trying page-by-page")
+
+    # Fallback: page-by-page OCR using PIL images
+    from pdf2image import convert_from_bytes
+
+    images = convert_from_bytes(content, dpi=300)
+    for page_idx in scanned_pages:
+        if page_idx < len(images):
+            try:
+                ocr_text = await ocr_image(images[page_idx])
                 if ocr_text.strip():
                     text_parts.insert(page_idx, ocr_text)
+            except Exception as e:
+                logger.warning(f"OCR failed on page {page_idx}: {e}")
 
     return "\n\n".join(text_parts)
 
@@ -65,20 +90,28 @@ def parse_txt(content: bytes) -> str:
     return content.decode("utf-8")
 
 
-def parse_image(content: bytes) -> str:
-    """Extract text from an image using Tesseract OCR."""
-    image = Image.open(io.BytesIO(content))
-    # Convert to RGB if needed (e.g. RGBA PNGs, palette images)
-    if image.mode not in ("L", "RGB"):
-        image = image.convert("RGB")
-    text = _ocr_image(image)
+async def parse_image(content: bytes) -> str:
+    """Extract text from an image using the configured OCR provider."""
+    text = await ocr_extract(content, "png")
     if not text.strip():
         raise ValueError("OCR could not extract any text from this image")
     return text
 
 
-def parse_tiff(content: bytes) -> str:
-    """Extract text from multi-page TIFF using OCR."""
+async def parse_tiff(content: bytes) -> str:
+    """Extract text from multi-page TIFF.
+
+    Tries cloud OCR on the full file first; falls back to page-by-page local OCR.
+    """
+    # Try cloud OCR on the entire TIFF
+    try:
+        text = await ocr_extract(content, "tiff")
+        if text and text.strip():
+            return text
+    except Exception as e:
+        logger.warning(f"Cloud OCR failed for TIFF ({e}), falling back to page-by-page")
+
+    # Page-by-page fallback
     image = Image.open(io.BytesIO(content))
     text_parts = []
     try:
@@ -88,7 +121,7 @@ def parse_tiff(content: bytes) -> str:
             frame = image.copy()
             if frame.mode not in ("L", "RGB"):
                 frame = frame.convert("RGB")
-            text = _ocr_image(frame)
+            text = await ocr_image(frame)
             if text.strip():
                 text_parts.append(text)
             page += 1
@@ -99,12 +132,9 @@ def parse_tiff(content: bytes) -> str:
     return "\n\n".join(text_parts)
 
 
-PARSERS = {
+# Parsers that need async
+_ASYNC_PARSERS = {
     "pdf": parse_pdf,
-    "docx": parse_docx,
-    "md": parse_markdown,
-    "txt": parse_txt,
-    # OCR image formats
     "png": parse_image,
     "jpg": parse_image,
     "jpeg": parse_image,
@@ -114,9 +144,21 @@ PARSERS = {
     "tif": parse_tiff,
 }
 
+# Parsers that are sync (no OCR needed)
+_SYNC_PARSERS = {
+    "docx": parse_docx,
+    "md": parse_markdown,
+    "txt": parse_txt,
+}
 
-def parse_document(content: bytes, file_type: str) -> str:
-    parser = PARSERS.get(file_type)
-    if not parser:
-        raise ValueError(f"Unsupported file type: {file_type}")
-    return parser(content)
+
+async def parse_document(content: bytes, file_type: str) -> str:
+    """Parse a document, using cloud or local OCR as needed.
+
+    This is now async to support cloud OCR providers.
+    """
+    if file_type in _ASYNC_PARSERS:
+        return await _ASYNC_PARSERS[file_type](content)
+    if file_type in _SYNC_PARSERS:
+        return _SYNC_PARSERS[file_type](content)
+    raise ValueError(f"Unsupported file type: {file_type}")

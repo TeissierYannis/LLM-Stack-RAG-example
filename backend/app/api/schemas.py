@@ -122,3 +122,10 @@ class ModelInfo(BaseModel):
 class ModelsResponse(BaseModel):
     completion_models: list[ModelInfo]
     embedding_models: list[ModelInfo]
+
+
+# --- OCR ---
+class OCRInfoResponse(BaseModel):
+    provider: str           # raw value: local, aws_textract, azure_di, google_docai, auto
+    provider_label: str     # human-readable label
+    cloud_enabled: bool     # True if using a cloud provider
